@@ -1,5 +1,7 @@
 # kener-mcp
 
+[![PyPI](https://img.shields.io/pypi/v/kener-mcp)](https://pypi.org/project/kener-mcp/) [![CI](https://github.com/alphaomegateam/kener-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/alphaomegateam/kener-mcp/actions/workflows/ci.yml)
+
 An [MCP](https://modelcontextprotocol.io) server for [Kener](https://github.com/rajnandan1/kener) v4 status pages. It lets an AI agent (Claude Code, Claude Desktop, or any MCP client) read monitors and incidents, and create, update, and resolve incidents.
 
 Tested against Kener 4.1.7.
@@ -57,8 +59,10 @@ KENER_API_KEY_CMD='pass show kener/api-key'
 ## Install
 
 ```bash
-uv tool install git+https://github.com/alphaomegateam/kener-mcp
+uv tool install kener-mcp
 ```
+
+Or run it without installing: `uvx kener-mcp`. With pip: `pip install kener-mcp`.
 
 Then check the URL and key:
 
@@ -124,6 +128,15 @@ uv run ruff check . && uv run ruff format --check .
 ```
 
 The tests use [respx](https://lundberg.github.io/respx/) to check the HTTP request shapes. They call no real Kener instance.
+
+## Releasing
+
+1. Bump the version: `uv version --bump patch` (or `minor` / `major`).
+2. Move the `Unreleased` notes in `CHANGELOG.md` under the new version.
+3. Commit, push, and wait for CI to pass.
+4. Publish a GitHub release with the tag `v<version>`, for example `gh release create v0.1.1 --generate-notes`.
+
+The `Release` workflow then checks that the tag matches the version in `pyproject.toml`, runs the tests, builds the package, and publishes it to PyPI with [Trusted Publishing](https://docs.pypi.org/trusted-publishers/).
 
 ## License
 

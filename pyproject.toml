@@ -1,7 +1,7 @@
 [project]
 name = "kener-mcp"
 version = "0.1.0"
-description = "MCP server for managing incidents on one or more Kener v4 status pages"
+description = "MCP server for managing incidents on Kener v4 status pages"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
@@ -23,6 +23,7 @@ dependencies = [
 [project.urls]
 Homepage = "https://github.com/alphaomegateam/kener-mcp"
 Issues = "https://github.com/alphaomegateam/kener-mcp/issues"
+Changelog = "https://github.com/alphaomegateam/kener-mcp/blob/main/CHANGELOG.md"
 
 [project.scripts]
 kener-mcp = "kener_mcp.server:main"
