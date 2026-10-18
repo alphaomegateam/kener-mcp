@@ -1,4 +1,6 @@
 import json
+import shlex
+import sys
 
 import httpx
 import pytest
@@ -6,6 +8,7 @@ import respx
 from fastmcp import Client
 from fastmcp.exceptions import ToolError
 
+from kener_mcp.auth import ApiKeyError, ApiKeyProvider
 from kener_mcp.server import Settings, SettingsError, create_server
 
 BASE = "https://status.example.com"
@@ -72,17 +75,107 @@ def test_settings_from_env():
     assert s.name == "cp"
 
 
+U = "https://x.example.com"
+
+
 @pytest.mark.parametrize(
     "env, msg",
     [
         ({"KENER_API_KEY": "k"}, "KENER_URL is not set"),
-        ({"KENER_URL": "x.example.com", "KENER_API_KEY": "k"}, "must start with"),
-        ({"KENER_URL": "https://x.example.com"}, "KENER_API_KEY is not set"),
+        ({"KENER_URL": "x.example.com", "KENER_API_KEY": "k"}, "must be an https"),
+        ({"KENER_URL": "https://u:p@x.example.com", "KENER_API_KEY": "k"}, "user name"),
+        ({"KENER_URL": U}, "exactly one"),
+        ({"KENER_URL": U, "KENER_API_KEY": "k", "KENER_API_KEY_CMD": "echo k"}, "exactly one"),
+        (
+            {"KENER_URL": U, "KENER_API_KEY_CMD": "echo k", "KENER_API_KEY_CMD_TIMEOUT": "x"},
+            "must be a number",
+        ),
     ],
 )
 def test_settings_errors(env, msg):
     with pytest.raises(SettingsError, match=msg):
         Settings.from_env(env)
+
+
+def test_flags_override_env():
+    s = Settings.from_env(
+        {"KENER_URL": U, "KENER_API_KEY": "k"},
+        url="https://y.example.com",
+        api_key_cmd="echo k2",
+        name="flag",
+    )
+    assert (s.url, s.api_key, s.api_key_cmd, s.name) == (
+        "https://y.example.com",
+        None,
+        "echo k2",
+        "flag",
+    )
+
+
+# --- API key command --------------------------------------------------------
+
+
+def py_cmd(code):
+    return f"{shlex.quote(sys.executable)} -c {shlex.quote(code)}"
+
+
+async def test_key_cmd_runs_once_and_caches(tmp_path):
+    counter = tmp_path / "n"
+    code = f"import pathlib; p=pathlib.Path({str(counter)!r}); p.write_text(p.read_text()+'x' if p.exists() else 'x'); print('cmd-key')"  # noqa: E501
+    keys = ApiKeyProvider(api_key_cmd=py_cmd(code))
+    assert await keys.get() == "cmd-key"
+    assert await keys.get() == "cmd-key"
+    assert counter.read_text() == "x"
+    keys.invalidate()
+    await keys.get()
+    assert counter.read_text() == "xx"
+
+
+@pytest.mark.parametrize(
+    "code, msg",
+    [
+        ("import sys; sys.stderr.write('locked'); sys.exit(3)", "exit code 3: locked"),
+        ("print('')", "printed nothing"),
+        ("print('a b')", "more than one value"),
+    ],
+)
+async def test_key_cmd_errors(code, msg):
+    with pytest.raises(ApiKeyError, match=msg):
+        await ApiKeyProvider(api_key_cmd=py_cmd(code)).get()
+
+
+async def test_key_cmd_failure_does_not_leak_stdout():
+    code = "import sys; print('SECRET-PART'); sys.exit(1)"
+    with pytest.raises(ApiKeyError) as exc:
+        await ApiKeyProvider(api_key_cmd=py_cmd(code)).get()
+    assert "SECRET-PART" not in str(exc.value)
+
+
+async def test_key_cmd_timeout():
+    keys = ApiKeyProvider(api_key_cmd=py_cmd("import time; time.sleep(5)"), timeout=0.3)
+    with pytest.raises(ApiKeyError, match="did not finish"):
+        await keys.get()
+
+
+async def test_key_cmd_missing_binary():
+    with pytest.raises(ApiKeyError, match="Could not run"):
+        await ApiKeyProvider(api_key_cmd="no-such-binary-kener-mcp").get()
+
+
+async def test_server_uses_cmd_key_and_reruns_after_401(api, tmp_path):
+    counter = tmp_path / "n"
+    code = f"import pathlib; p=pathlib.Path({str(counter)!r}); n=len(p.read_text()) if p.exists() else 0; p.write_text('x'*(n+1)); print(f'key{{n+1}}')"  # noqa: E501
+    server = create_server(Settings(url=BASE, api_key_cmd=py_cmd(code), name="test"))
+    route = api.get("/monitors")
+    route.side_effect = [
+        httpx.Response(401, json={"error": {"code": "UNAUTHORIZED", "message": "Invalid API key"}}),
+        httpx.Response(200, json={"monitors": []}),
+    ]
+    with pytest.raises(ToolError, match="Invalid API key"):
+        await call(server, "list_monitors")
+    await call(server, "list_monitors")
+    auths = [c.request.headers["authorization"] for c in route.calls]
+    assert auths == ["Bearer key1", "Bearer key2"]
 
 
 # --- request shapes ---------------------------------------------------------
