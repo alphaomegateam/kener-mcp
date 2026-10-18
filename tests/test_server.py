@@ -334,3 +334,11 @@ async def test_write_tools_are_marked_not_read_only(server):
     assert tools["list_incidents"].annotations.read_only_hint is True
     assert tools["post_incident_update"].annotations.read_only_hint is False
     assert "incident_id" in tools["post_incident_update"].input_schema["required"]
+
+
+async def test_server_reports_own_version(server):
+    from kener_mcp import __version__
+
+    async with Client(server) as client:
+        info = client.server_info
+    assert (info.name, info.version) == ("kener-test", __version__)

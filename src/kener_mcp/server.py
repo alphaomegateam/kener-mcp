@@ -31,6 +31,7 @@ from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from pydantic import Field
 
+from . import __version__
 from .auth import DEFAULT_CMD_TIMEOUT, ApiKeyError, ApiKeyProvider
 from .client import Impact, IncidentState, KenerClient, KenerError
 
@@ -157,7 +158,11 @@ def create_server(settings: Settings, keys: ApiKeyProvider | None = None) -> Fas
     )
     if settings.instructions:
         instructions += "\n\n" + settings.instructions
-    mcp = FastMCP(f"kener-{settings.name}" if settings.name else "kener", instructions=instructions)
+    mcp = FastMCP(
+        f"kener-{settings.name}" if settings.name else "kener",
+        instructions=instructions,
+        version=__version__,
+    )
 
     @asynccontextmanager
     async def kener() -> AsyncIterator[KenerClient]:
@@ -324,7 +329,7 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "check":
         sys.exit(asyncio.run(_check(settings)))
-    create_server(settings).run()
+    create_server(settings).run(show_banner=False)
 
 
 if __name__ == "__main__":
